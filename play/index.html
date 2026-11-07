@@ -109,9 +109,62 @@ body {
 			<div id="status-notice"></div>
 		</div>
 
-		<script src="index.js?v=20261107174804"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","mainPack":"index.pck?v=20261107174804","experimentalVK":false,"fileSizes":{"index.pck?v=20261107174804":28247771,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+// Kill All Martians: fetch the data_N.pck parts (packs.json) before the engine starts and hand them to it as
+// files at /kam/<file>. Doing it here keeps the ~200 MB out of the WebAssembly heap (which never shrinks - a big
+// part of why iOS Safari killed the tab), and Cache Storage keeps them on disk between visits.
+async function kamPreload(bar, notice) {
+	let m;
+	try {
+		const r = await fetch('packs.json?t=' + Date.now(), {cache: 'no-store'});
+		if (!r.ok) return;
+		m = await r.json();
+	} catch (e) { return; }  // the in-game loader reports problems
+	const parts = m.parts || [];
+	if (!parts.length) return;
+	let cache = null;
+	try { cache = await caches.open('kam-packs'); } catch (e) {}
+	const total = parts.reduce((a, p) => a + p.size, 0);
+	let done = 0;
+	const keep = new Set();
+	for (const p of parts) {
+		const key = new URL(p.file + '?md5=' + p.md5, location.href).href;
+		keep.add(key);
+		let buf = null;
+		if (cache) {
+			try { const hit = await cache.match(key); if (hit) buf = await hit.arrayBuffer(); } catch (e) {}
+			if (buf && buf.byteLength !== p.size) buf = null;
+		}
+		if (!buf) {
+			notice.textContent = 'Downloading game data ' + (parts.indexOf(p) + 1) + '/' + parts.length + '...';
+			const net = await fetch(p.file + '?v=' + m.version, {cache: 'no-store'});
+			if (!net.ok) throw new Error('Game data download failed (HTTP ' + net.status + '). Reload the page.');
+			const out = new Uint8Array(p.size);
+			let off = 0;
+			const reader = net.body.getReader();
+			for (;;) {
+				const c = await reader.read();
+				if (c.done) break;
+				if (off + c.value.length > p.size) throw new Error('Game data was larger than expected. Reload the page.');
+				out.set(c.value, off);
+				off += c.value.length;
+				bar.max = total; bar.value = done + off;
+			}
+			if (off !== p.size) throw new Error('Game data download was incomplete. Reload the page.');
+			buf = out.buffer;
+			if (cache) { try { await cache.put(key, new Response(out)); } catch (e) {} }
+		}
+		done += p.size;
+		bar.max = total; bar.value = done;
+		await engine.preloadFile(buf, '/kam/' + p.file);
+	}
+	notice.textContent = '';
+	if (cache) { try { for (const k of await cache.keys()) if (!keep.has(k.url)) await cache.delete(k); } catch (e) {} }
+}
+</script>
+		<script src="index.js?v=20261107134730"></script>
+		<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","mainPack":"index.pck?v=20261107134730","experimentalVK":false,"fileSizes":{"index.pck?v=20261107134730":28576883,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
@@ -199,7 +252,7 @@ const engine = new Engine(GODOT_CONFIG);
 		}
 	} else {
 		setStatusMode('progress');
-		engine.startGame({
+		kamPreload(statusProgress, statusNotice).then(() => engine.startGame({
 			'onProgress': function (current, total) {
 				if (current > 0 && total > 0) {
 					statusProgress.value = current;
@@ -209,7 +262,7 @@ const engine = new Engine(GODOT_CONFIG);
 					statusProgress.removeAttribute('max');
 				}
 			},
-		}).then(() => {
+		})).then(() => {
 			setStatusMode('hidden');
 		}, displayFailureNotice);
 	}

@@ -1,23 +1,11 @@
 {
- "version": "20261107174804",
+ "version": "20261107134730",
  "parts": [
   {
    "file": "data_1.pck",
-   "size": 94984004,
-   "md5": "ba3131b1120adfb3c503aec4bc37effd",
-   "files": 64
-  },
-  {
-   "file": "data_2.pck",
-   "size": 94578180,
-   "md5": "57adbc0fa12d713be8440248cee88ad9",
-   "files": 86
-  },
-  {
-   "file": "data_3.pck",
-   "size": 28565112,
-   "md5": "5b1de8785089b99e1af2b2efb869c447",
-   "files": 21
+   "size": 90636446,
+   "md5": "7a5e692debf4343fc5355b3135d62c0c",
+   "files": 101
   }
  ]
 }
